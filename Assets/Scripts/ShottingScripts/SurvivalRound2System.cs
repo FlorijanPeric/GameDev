@@ -1,4 +1,4 @@
-
+/*
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
@@ -76,58 +76,49 @@ public class SurvivalRound2System : MonoBehaviour
             enemySpawner.OnEnemyKilled -= HandleEnemyKilled;
         }
     }
+private int currentRound = 1;
 
-    private void HandleEnemyKilled()
+private void HandleEnemyKilled()
+{
+    totalEnemiesKilled++;
+
+    if (debugLogRound2)
+        Debug.Log($"Kills: {totalEnemiesKilled}");
+
+    if (totalEnemiesKilled >= killsRequiredForRound2)
     {
-        totalEnemiesKilled++;
-
-        if (debugLogRound2)
-        {
-            Debug.Log($"SurvivalRound2System: Enemy killed. Total kills: {totalEnemiesKilled}/{killsRequiredForRound2}");
-        }
-
-        if (!round2Active && totalEnemiesKilled >= killsRequiredForRound2)
-        {
-            StartCoroutine(NextRoundLoop());
-        }
+        ActivateNextRound();
     }
-
+}
     private void ActivateRound2()
     {
-        round2Active = true;
+        currentRound++;
 
-        Debug.Log("=== ROUND 2 ACTIVATED ===");
+    if (currentRound > 10)
+    {
+        if (round2AnnounceText != null)
+            round2AnnounceText.text = "FINAL ROUND";
+        return;
+    }
 
-        // Announce Round 2
-        AnnounceRound2();
+    Debug.Log($"=== ROUND {currentRound} ===");
 
-    
-        
+    AnnounceRound2(currentRound);
 
-        // Update spawner settings for increased difficulty
-        if (enemySpawner != null)
-        {
-            // Reduce spawn interval (faster spawning)
-            enemySpawner.spawnIntervalMultiplier = round2SpawnRateMultiplier;
+    // scale difficulty
+    enemySpawner.spawnIntervalMultiplier *= 0.85f;
+    enemySpawner.maxAliveEnemies += 3;
+    enemySpawner.waveSizeBonus += 2;
 
-            // Allow more enemies alive
-            enemySpawner.maxAliveEnemies = Mathf.RoundToInt(originalMaxAliveEnemies * round2MaxEnemiesMultiplier);
+    SpawnWave(currentRound);
 
-            // Increase wave size
-            enemySpawner.waveSizeBonus = originalWaveSizeBonus + round2WaveSizeBonus;
+    killsRequiredForRound2 += 40;
+    totalEnemiesKilled = 0;
 
-            // Enable continuous reinforcement if not already
-            enemySpawner.replaceDeadEnemiesContinuously = true;
-            enemySpawner.minimumAliveEnemyCount = Mathf.RoundToInt(enemySpawner.minimumAliveEnemyCount * 1.5f);
-
-            Debug.Log($"Round2: Spawn multiplier={enemySpawner.spawnIntervalMultiplier}, " +
-                     $"MaxAlive={enemySpawner.maxAliveEnemies}, " +
-                     $"WaveSizeBonus={enemySpawner.waveSizeBonus}");
-        }
-        killsRequiredForRound2 += 40;
-        round2EnemySpawnWave += 5;
-        // Spawn initial wave of enemies from all directions
-        SpawnInitialRound2Wave();
+    if (currentRound == 2)
+    {
+        ActivateRound2Extras();
+    }
     }
 
     private void AnnounceRound2()
@@ -144,6 +135,14 @@ public class SurvivalRound2System : MonoBehaviour
         }
     }
 
+    private void ActivateRound2Extras()
+{
+    Debug.Log("ROUND 2 SPECIAL EFFECTS");
+
+
+    enemySpawner.replaceDeadEnemiesContinuously = false;
+}
+
     private System.Collections.IEnumerator ShowRound2Announcement()
     {
         round2AnnounceText.text = "ROUND 2!";
@@ -157,19 +156,42 @@ public class SurvivalRound2System : MonoBehaviour
 
     private void SpawnInitialRound2Wave()
     {
-        if (enemySpawner == null) return;
+       int amount = round2EnemySpawnWave + (round * 5);
 
-        Debug.Log($"SurvivalRound2System: Spawning initial Round 2 wave of {round2EnemySpawnWave} enemies");
-
-        // Queue up a bunch of spawns from all directions
-        for (int i = 0; i < round2EnemySpawnWave; i++)
-        {
-            enemySpawner.ForceSpawnEnemy(Random.Range(0, enemySpawner.enemyPrefabs.Length));
-        }
+    for (int i = 0; i < amount; i++)
+    {
+        enemySpawner.ForceSpawnEnemy(Random.Range(0, enemySpawner.enemyPrefabs.Length));
+    }
     }
 
     public bool IsRound2Active => round2Active;
     public int TotalEnemiesKilled => totalEnemiesKilled;
+
+
+private void ActivateNextRound()
+{
+    if (round2Active) return;
+
+    round2Active = true;
+
+    currentRound++;
+
+    Debug.Log($"=== ROUND {currentRound} ===");
+
+    AnnounceRound(currentRound);
+
+    // scale difficulty each round
+    enemySpawner.spawnIntervalMultiplier *= 0.85f;
+    enemySpawner.maxAliveEnemies += 3;
+    enemySpawner.waveSizeBonus += 2;
+
+    SpawnWave(currentRound);
+
+    // reset kills for next round
+    totalEnemiesKilled = 0;
+
+    round2Active = false;
+}
 
     private IEnumerator NextRoundLoop(){
         round2Active = true;
@@ -192,5 +214,144 @@ public class SurvivalRound2System : MonoBehaviour
 
             yield return new WaitForSeconds(1f);
         }
+    }
+}
+*/
+using UnityEngine;
+using UnityEngine.UI;
+using System.Collections;
+
+public class SurvivalRound2System : MonoBehaviour
+{
+    [Header("Round Settings")]
+    public int killsRequiredBase = 40;
+    public int maxRounds = 10;
+
+    [Header("Enemy Scaling")]
+    public int baseWaveSize = 15;
+    public float spawnRateMultiplierStep = 0.85f;
+    public int maxAliveBonusPerRound = 3;
+    public int waveBonusPerRound = 2;
+
+    [Header("References")]
+    public SurvivalEnemySpawner enemySpawner;
+    public Text roundText;
+    public AudioSource audioSource;
+    public AudioClip roundClip;
+
+    private int currentRound = 1;
+    private int killCount = 0;
+    private int killsRequired;
+
+    private bool transitioning = false;
+
+    void Start()
+    {
+        if (enemySpawner == null)
+            enemySpawner = FindObjectOfType<SurvivalEnemySpawner>();
+
+        killsRequired = killsRequiredBase;
+
+        if (enemySpawner != null)
+            enemySpawner.OnEnemyKilled += OnEnemyKilled;
+    }
+
+    void OnDestroy()
+    {
+        if (enemySpawner != null)
+            enemySpawner.OnEnemyKilled -= OnEnemyKilled;
+    }
+
+
+
+    IEnumerator NextRound()
+{
+    transitioning = true;
+
+    yield return new WaitForSeconds(1f);
+
+    currentRound++;
+
+    if (currentRound > maxRounds)
+    {
+        ShowText("FINAL ROUND");
+        transitioning = false;
+        yield break;
+    }
+
+    ShowText("ROUND " + currentRound);
+
+    ApplyScaling();
+
+    yield return new WaitForSeconds(0.2f);
+
+    SpawnWave();
+
+    killCount = 0;
+    killsRequired += 40;
+
+    yield return new WaitForSeconds(1f);
+
+    transitioning = false;
+}
+
+    void ApplyScaling()
+    {
+        if (enemySpawner == null) return;
+
+        enemySpawner.spawnIntervalMultiplier *= spawnRateMultiplierStep;
+        enemySpawner.maxAliveEnemies += maxAliveBonusPerRound;
+        enemySpawner.waveSizeBonus += waveBonusPerRound;
+
+        enemySpawner.replaceDeadEnemiesContinuously = true;
+    }
+
+    void SpawnWave()
+{
+    if (enemySpawner == null || enemySpawner.enemyPrefabs == null || enemySpawner.enemyPrefabs.Length == 0)
+    {
+        Debug.LogWarning("No enemy prefabs assigned!");
+        return;
+    }
+
+    int amount = baseWaveSize + (currentRound * 5);
+
+    for (int i = 0; i < amount; i++)
+    {
+        enemySpawner.ForceSpawnEnemy(
+            Random.Range(0, enemySpawner.enemyPrefabs.Length)
+        );
+    }
+}
+   public void OnEnemyKilled()
+{
+    if (transitioning || enemySpawner == null) return;
+
+    killCount++;
+
+    Debug.Log($"Kill Count: {killCount}/{killsRequired}");
+
+    if (killCount >= killsRequired)
+    {
+        if (!transitioning)
+            StartCoroutine(NextRound());
+    }
+}
+
+    void ShowText(string msg)
+    {
+     if (roundText == null) return;
+
+        StartCoroutine(ShowMsg(msg));
+    }
+
+    IEnumerator ShowMsg(string msg)
+    {
+        roundText.text = msg;
+        roundText.gameObject.SetActive(true);
+
+        yield return new WaitForSeconds(3f);
+
+        roundText.gameObject.SetActive(false);
     }
 }

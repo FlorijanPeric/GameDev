@@ -48,8 +48,8 @@ public static class CreateRound2UI
         if (roundSystem != null)
         {
             Undo.RecordObject(roundSystem, "Assign Round2 UI");
-            roundSystem.round2AnnounceText = text;
-            roundSystem.round2AudioSource = audio;
+            roundSystem.roundText = text;
+            roundSystem.audioSource = audio;
             EditorUtility.SetDirty(roundSystem);
         }
 

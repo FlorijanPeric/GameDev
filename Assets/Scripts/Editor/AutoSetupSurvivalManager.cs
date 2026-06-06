@@ -74,7 +74,6 @@ public static class AutoSetupSurvivalManager
         }
 
         // Link map enlarger to round system
-        round.mapEnlarger = map;
 
         // Try to find a UI Text for announcement
         Text[] texts = Object.FindObjectsOfType<Text>(true);
@@ -88,7 +87,7 @@ public static class AutoSetupSurvivalManager
             }
         }
         if (found == null && texts.Length > 0) found = texts[0];
-        round.round2AnnounceText = found;
+        round.roundText = found;
 
         // Mark scene dirty so user can save
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());

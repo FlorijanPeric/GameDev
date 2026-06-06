@@ -98,6 +98,7 @@ public class SurvivalEnemySpawner : MonoBehaviour
     public event System.Action<GameObject> EnemySpawned;
 
     public int CurrentWaveIndex => waveIndex;
+    private float worldGroundYReference;
     public int AliveEnemyCount
     {
         get
@@ -117,6 +118,7 @@ public class SurvivalEnemySpawner : MonoBehaviour
         AutoAssignEnemyAudioIfMissing();
         AutoAssignDefaultAnimatorControllerIfMissing();
         AutoAssignEnemyPrefabsIfMissing();
+        worldGroundYReference = transform.position.y;
     }
 
     private void OnValidate()
@@ -600,7 +602,14 @@ public class SurvivalEnemySpawner : MonoBehaviour
             groundY = navGroundY;
         }
 
-        candidatePosition.y = groundY;
+       candidatePosition.y = groundY;
+        // safety clamp (prevents Round 2 terrain chaos)
+        candidatePosition.y = Mathf.Clamp(
+            candidatePosition.y,
+            worldGroundYReference - 2f,
+            worldGroundYReference + 2f
+        );
+
         return candidatePosition;
     }
 
