@@ -17,6 +17,7 @@ public class Weapon : MonoBehaviour
     public float meleeDamage = 50f;
 
     [HideInInspector] public bool isEquipped = false;
+    [HideInInspector] public bool isPickup = false;
 
     private void Awake()
     {
@@ -36,7 +37,8 @@ public class Weapon : MonoBehaviour
             return;
         }
 
-        if (!isEquipped)
+        // Don't hide the model if it's a world pickup — the spawner already made it visible.
+        if (!isEquipped && !isPickup)
         {
             weaponModel.SetActive(false);
         }

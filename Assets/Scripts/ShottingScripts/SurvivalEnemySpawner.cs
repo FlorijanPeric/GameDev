@@ -14,9 +14,9 @@ public class SurvivalEnemySpawner : MonoBehaviour
     public bool autoStartSpawnLoop = true;
 
     [Header("Wave Timing")]
-    public float initialDelay = 2f;
-    public float timeBetweenWaves = 4f;
-    public float timeBetweenSpawns = 0.18f;
+    public float initialDelay = 0.5f;
+    public float timeBetweenWaves = 1.5f;
+    public float timeBetweenSpawns = 0.04f;
 
     [Header("Wave Size")]
     public int startingEnemies = 24;
@@ -62,12 +62,12 @@ public class SurvivalEnemySpawner : MonoBehaviour
     public int waveSizeBonus = 0;
     public int aliveCapBonus = 0;
     [Header("Spawn Smoothing")]
-    public float maxSpawnsPerSecond = 8f;
+    public float maxSpawnsPerSecond = 25f;
 
     [Header("Continuous Reinforcement")]
     public bool replaceDeadEnemiesContinuously = true;
     public int minimumAliveEnemyCount = 14;
-    public float replacementSpawnDelay = 0.15f;
+    public float replacementSpawnDelay = 0.05f;
 
     [Header("Enemy Audio (assigned to spawned enemies)")]
     public AudioClip enemyFootstepClip;
@@ -98,7 +98,6 @@ public class SurvivalEnemySpawner : MonoBehaviour
     public event System.Action<GameObject> EnemySpawned;
 
     public int CurrentWaveIndex => waveIndex;
-    private float worldGroundYReference;
     public int AliveEnemyCount
     {
         get
@@ -118,7 +117,6 @@ public class SurvivalEnemySpawner : MonoBehaviour
         AutoAssignEnemyAudioIfMissing();
         AutoAssignDefaultAnimatorControllerIfMissing();
         AutoAssignEnemyPrefabsIfMissing();
-        worldGroundYReference = transform.position.y;
     }
 
     private void OnValidate()
@@ -140,6 +138,18 @@ public class SurvivalEnemySpawner : MonoBehaviour
     private void OnDisable()
     {
         StopSpawning();
+    }
+
+    private float nextCleanupTime;
+    private void Update()
+    {
+        // Continuously detect dead enemies even while the wave coroutine is sleeping between waves.
+        // Without this, replacement spawns never trigger during inter-wave gaps in builds.
+        if (Time.time >= nextCleanupTime)
+        {
+            nextCleanupTime = Time.time + 0.5f;
+            CleanupDeadEnemies();
+        }
     }
 
     public void StartEndlessLoop()
@@ -412,7 +422,7 @@ public class SurvivalEnemySpawner : MonoBehaviour
         EnemyMaterialFixer.FixObjectMaterials(enemy, false);
         EnsureEnemyRuntimeComponents(enemy);
 
-        SnapSpawnedEnemyToGround(enemy, spawnPosition.y + spawnGroundOffset);
+        SnapEnemyFeetToGround(enemy);
 
         // Force immediate grounding after spawn to prevent floating zombies.
         ZombieChaseAI chaseAI = enemy.GetComponent<ZombieChaseAI>();
@@ -602,61 +612,42 @@ public class SurvivalEnemySpawner : MonoBehaviour
             groundY = navGroundY;
         }
 
-       candidatePosition.y = groundY;
-        // safety clamp (prevents Round 2 terrain chaos)
-        candidatePosition.y = Mathf.Clamp(
-            candidatePosition.y,
-            worldGroundYReference - 2f,
-            worldGroundYReference + 2f
-        );
-
+        candidatePosition.y = groundY;
         return candidatePosition;
     }
 
-    private void SnapSpawnedEnemyToGround(GameObject enemy, float desiredGroundY)
-    {
-        if (enemy == null)
-        {
-            return;
-        }
-
-        EnsureEnemyHitCollider(enemy);
-
-        // Try to snap using bounds, but fallback to direct raycast if bounds don't work
-        Bounds? bounds = GetEnemyWorldBounds(enemy);
-        if (bounds != null)
-        {
-            float currentMinY = bounds.Value.min.y;
-            float delta = desiredGroundY - currentMinY;
-            if (Mathf.Abs(delta) > 0.001f)
-            {
-                enemy.transform.position += Vector3.up * delta;
-            }
-        }
-        else
-        {
-            // Fallback: just set Y directly if no bounds found
-            Vector3 pos = enemy.transform.position;
-            pos.y = desiredGroundY;
-            enemy.transform.position = pos;
-        }
-
-        // Force ground snap via raycast as final verification
-        ForceGroundSnapViaRaycast(enemy);
-    }
-
-    private void ForceGroundSnapViaRaycast(GameObject enemy)
+    private void SnapEnemyFeetToGround(GameObject enemy)
     {
         if (enemy == null) return;
 
+        EnsureEnemyHitCollider(enemy);
+
+        // Disable own colliders so the raycast hits the ground, not the enemy itself
+        Collider[] ownCols = enemy.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < ownCols.Length; i++)
+            if (ownCols[i] != null) ownCols[i].enabled = false;
+
         Vector3 pos = enemy.transform.position;
         RaycastHit hit;
+        bool foundGround = Physics.Raycast(pos + Vector3.up * 20f, Vector3.down, out hit, 120f, ~0, QueryTriggerInteraction.Ignore);
 
-        // Raycast down from current position
-        if (Physics.Raycast(pos + Vector3.up * 2f, Vector3.down, out hit, 10f, ~0, QueryTriggerInteraction.Ignore))
+        for (int i = 0; i < ownCols.Length; i++)
+            if (ownCols[i] != null) ownCols[i].enabled = true;
+
+        if (!foundGround) return;
+
+        float groundY = hit.point.y + spawnGroundOffset;
+
+        // Place root so the bottom of the enemy's bounds sits on the ground
+        Bounds? bounds = GetEnemyWorldBounds(enemy);
+        if (bounds.HasValue)
         {
-            pos.y = hit.point.y + spawnGroundOffset;
-            enemy.transform.position = pos;
+            float feetToRoot = pos.y - bounds.Value.min.y;
+            enemy.transform.position = new Vector3(pos.x, groundY + feetToRoot, pos.z);
+        }
+        else
+        {
+            enemy.transform.position = new Vector3(pos.x, groundY, pos.z);
         }
     }
 
@@ -779,6 +770,31 @@ public class SurvivalEnemySpawner : MonoBehaviour
             {
                 return i;
             }
+        }
+
+        // Last resort: ignore visibility, just pick the farthest point within distance range.
+        // This ensures enemies always spawn even on wide-open maps where nothing is out of sight.
+        {
+            int lastResort = -1;
+            float bestDist = -1f;
+            for (int i = 0; i < spawnPoints.Length; i++)
+            {
+                Transform t = spawnPoints[i];
+                if (t == null) continue;
+                float dist = Vector3.ProjectOnPlane(t.position - (player != null ? player.position : transform.position), Vector3.up).magnitude;
+                if (dist >= minSpawnDistanceFromPlayer && (maxSpawnDistanceFromPlayer <= 0f || dist <= maxSpawnDistanceFromPlayer) && dist > bestDist)
+                {
+                    bestDist = dist;
+                    lastResort = i;
+                }
+            }
+            if (lastResort >= 0) return lastResort;
+        }
+
+        // Absolute last resort: any non-null spawn point.
+        for (int i = 0; i < spawnPoints.Length; i++)
+        {
+            if (spawnPoints[i] != null) return i;
         }
 
         return -1;
@@ -912,14 +928,7 @@ public class SurvivalEnemySpawner : MonoBehaviour
             }
         }
 
-        // Subscribe to health's death event to trigger spawner's OnEnemyKilled
-        EnemyHealth.EnemyKilled += (h) =>
-        {
-            if (h.gameObject == enemy)
-            {
-                OnEnemyKilled?.Invoke();
-            }
-        };
+        // OnEnemyKilled is fired by CleanupDeadEnemies when the object is removed from aliveEnemies.
 
         ZombieChaseAI ai = enemy.GetComponent<ZombieChaseAI>();
         if (ai == null)
@@ -1024,6 +1033,11 @@ public class SurvivalEnemySpawner : MonoBehaviour
         // Keep it disabled by default - only enable if primary AI fails
         genericMovement.enabled = false;
 
+        // Zero out NavMeshAgent baseOffset immediately so the prefab's saved offset can't lift the enemy before SnapToGround runs.
+        NavMeshAgent spawnedAgent = enemy.GetComponent<NavMeshAgent>();
+        if (spawnedAgent == null) spawnedAgent = enemy.GetComponentInChildren<NavMeshAgent>();
+        if (spawnedAgent != null) spawnedAgent.baseOffset = 0f;
+
         // Ensure root rigidbody exists and is initialized to avoid spawn-launching/floating issues.
         Rigidbody rootRb = enemy.GetComponent<Rigidbody>();
         if (rootRb == null)
@@ -1118,6 +1132,7 @@ public class SurvivalEnemySpawner : MonoBehaviour
 
             Vector3 otherPos = other.transform.position;
             Vector3 delta = newPos - otherPos;
+            delta.y = 0f;
             float dist = delta.magnitude;
             if (dist <= 0.001f)
             {
@@ -1151,8 +1166,8 @@ public class SurvivalEnemySpawner : MonoBehaviour
                 }
             }
         }
-
         newEnemy.transform.position = newPos;
+
     }
 
     private IEnumerator ApplySpawnSeparationPhysics(GameObject newEnemy)
@@ -1194,6 +1209,13 @@ public class SurvivalEnemySpawner : MonoBehaviour
         if (ai != null)
         {
             ai.enabled = aiWasEnabled;
+        }
+
+        // Re-snap after horizontal separation may have shifted XZ, and to override any
+        // NavMeshAgent warp that occurred during the first frame.
+        if (newEnemy != null)
+        {
+            SnapEnemyFeetToGround(newEnemy);
         }
     }
 
@@ -1333,6 +1355,8 @@ public class SurvivalEnemySpawner : MonoBehaviour
             }
 
             Animator animator = prefab.GetComponentInChildren<Animator>(true);
+            Animator anim = prefab.GetComponent<Animator>();
+            if (anim != null) anim.enabled = true;
             if (animator != null && animator.runtimeAnimatorController != null)
             {
                 defaultZombieAnimatorController = animator.runtimeAnimatorController;
@@ -1340,6 +1364,16 @@ public class SurvivalEnemySpawner : MonoBehaviour
             }
         }
     }
+
+    private float groundY = 0f;
+
+    private Vector3 ClampToGround(Vector3 pos)
+    {
+        pos.y = groundY;
+        return pos;
+    }
+
+
 
     private void AutoAssignEnemyPrefabsIfMissing()
     {
@@ -1551,82 +1585,62 @@ public class SurvivalEnemySpawner : MonoBehaviour
             return false;
         }
 
-        // Try multiple random attempts to find a valid spawn position
-        for (int attempt = 0; attempt < 10; attempt++)
+        // Two passes: first respects requireSpawnOutOfSight, second ignores it as fallback.
+        for (int pass = 0; pass < 2; pass++)
         {
-            // Generate random position in a ring around the player
-            float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
-            float distance = Random.Range(minSpawnDistanceFromPlayer, maxSpawnDistanceFromPlayer);
-            
-            Vector3 randomOffset = new Vector3(
-                Mathf.Cos(angle) * distance,
-                0f,
-                Mathf.Sin(angle) * distance
-            );
+            bool checkVisibility = pass == 0 && requireSpawnOutOfSight;
+            int attempts = pass == 0 ? 10 : 6;
 
-            Vector3 candidatePosition = player.position + randomOffset;
-
-            // Check out-of-sight requirement
-            if (requireSpawnOutOfSight)
+            for (int attempt = 0; attempt < attempts; attempt++)
             {
-                Vector3 eye = player.position + Vector3.up * 1.6f;
-                Vector3 target = candidatePosition + Vector3.up * 1.2f;
-                Vector3 direction = target - eye;
-                float rayDistance = direction.magnitude;
+                float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
+                float distance = Random.Range(minSpawnDistanceFromPlayer, maxSpawnDistanceFromPlayer);
 
-                if (rayDistance > 0.01f)
+                Vector3 randomOffset = new Vector3(
+                    Mathf.Cos(angle) * distance,
+                    0f,
+                    Mathf.Sin(angle) * distance
+                );
+
+                Vector3 candidatePosition = player.position + randomOffset;
+
+                if (checkVisibility)
                 {
-                    bool blocked = Physics.Raycast(eye, direction.normalized, rayDistance, visibilityBlockers, QueryTriggerInteraction.Ignore);
-                    if (!blocked)
+                    Vector3 eye = player.position + Vector3.up * 1.6f;
+                    Vector3 target = candidatePosition + Vector3.up * 1.2f;
+                    Vector3 direction = target - eye;
+                    float rayDistance = direction.magnitude;
+
+                    if (rayDistance > 0.01f)
                     {
-                        continue; // Not blocked from view, skip this spot
+                        bool blocked = Physics.Raycast(eye, direction.normalized, rayDistance, visibilityBlockers, QueryTriggerInteraction.Ignore);
+                        if (!blocked) continue;
                     }
                 }
+
+                candidatePosition = ResolveSpawnGroundPosition(candidatePosition);
+
+                if (!NavMesh.SamplePosition(candidatePosition, out NavMeshHit navHit, 3f, NavMesh.AllAreas))
+                    continue;
+
+                spawnPosition = navHit.position;
+
+                if (Mathf.Abs(spawnPosition.y - player.position.y) > 40f)
+                    continue;
+
+                if (!Physics.Raycast(spawnPosition + Vector3.up * 6f, Vector3.down, out RaycastHit groundProbeHit, 12f, ~0, QueryTriggerInteraction.Ignore))
+                    continue;
+
+                spawnPosition = groundProbeHit.point;
+
+                Vector3 flatToPlayer = player.position - spawnPosition;
+                flatToPlayer.y = 0f;
+                spawnRotation = flatToPlayer.sqrMagnitude > 0.001f
+                    ? Quaternion.LookRotation(flatToPlayer.normalized, Vector3.up)
+                    : Quaternion.identity;
+
+                return true;
             }
-
-            // Try to get ground position
-            candidatePosition = ResolveSpawnGroundPosition(candidatePosition);
-
-            // Validate with NavMesh if available
-            NavMeshHit navHit;
-            if (!NavMesh.SamplePosition(candidatePosition, out navHit, 3f, NavMesh.AllAreas))
-            {
-                continue; // Position not on NavMesh, skip
-            }
-
-            spawnPosition = navHit.position;
-
-            // Quick sanity checks: reject positions extremely far above/below player (likely under/over map)
-            if (Mathf.Abs(spawnPosition.y - player.position.y) > 40f)
-            {
-                continue;
-            }
-
-            // Probe downward from a small height to ensure there is visible ground close by
-            RaycastHit groundProbeHit;
-            Vector3 probeStart = spawnPosition + Vector3.up * 6f;
-            if (!Physics.Raycast(probeStart, Vector3.down, out groundProbeHit, 12f, ~0, QueryTriggerInteraction.Ignore))
-            {
-                // No nearby visible ground, skip this candidate
-                continue;
-            }
-
-            // Use the precise ground point for spawn to avoid tiny floating offsets or being inside geometry
-            spawnPosition = groundProbeHit.point;
-
-            // Calculate rotation toward player
-            Vector3 flatToPlayer = player.position - spawnPosition;
-            flatToPlayer.y = 0f;
-            if (flatToPlayer.sqrMagnitude > 0.001f)
-            {
-                spawnRotation = Quaternion.LookRotation(flatToPlayer.normalized, Vector3.up);
-            }
-            else
-            {
-                spawnRotation = Quaternion.identity;
-            }
-
-            return true;
         }
 
         return false;

@@ -24,28 +24,21 @@ public class WeaponPickup : MonoBehaviour
 
     void TryPickup()
     {
-        if (Camera.main == null)
-        {
-            return;
-        }
+        if (weapon == null || Camera.main == null) return;
 
         WeaponManager manager = FindObjectOfType<WeaponManager>();
-        if (manager == null)
-        {
-            return;
-        }
+        if (manager == null) return;
 
-        RaycastHit hit;
-        if (Physics.Raycast(Camera.main.transform.position,
-                            Camera.main.transform.forward,
-                            out hit, pickupRange))
-        {
-            WeaponPickup targetPickup = hit.transform.GetComponentInParent<WeaponPickup>();
-            if (targetPickup == this && weapon != null)
-            {
-                manager.PickupWeapon(weapon);
-                Destroy(gameObject);
-            }
-        }
+        Vector3 camPos = Camera.main.transform.position;
+
+        // Distance check — no collider required
+        if (Vector3.Distance(transform.position, camPos) > pickupRange) return;
+
+        // Facing check — player must be roughly looking toward the weapon
+        Vector3 toWeapon = (transform.position - camPos).normalized;
+        if (Vector3.Dot(Camera.main.transform.forward, toWeapon) < 0.4f) return;
+
+        manager.PickupWeapon(weapon);
+        Destroy(gameObject);
     }
 }

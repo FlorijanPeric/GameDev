@@ -123,14 +123,33 @@ public class WeaponManager : MonoBehaviour
             AutoSetupWeapon(newWeapon);
         }
 
+        // Determine which slot this weapon targets
+        WeaponSlot targetSlot = newWeapon.slot;
         if (autoReplacePrimaryWithPistol && IsPistolWeapon(newWeapon))
+            targetSlot = WeaponSlot.Primary;
+
+        // If we already have a weapon in this slot, refill its ammo instead of replacing
+        Weapon existingWeapon = GetWeaponInSlot(targetSlot);
+        if (existingWeapon != null)
         {
-            ReplaceWeapon(ref primaryWeapon, newWeapon);
-            Equip(primaryWeapon);
-            return;
+            GunShootTracer existingShooter = existingWeapon.weaponModel != null
+                ? existingWeapon.weaponModel.GetComponent<GunShootTracer>()
+                : existingWeapon.GetComponentInChildren<GunShootTracer>();
+
+            if (existingShooter != null)
+            {
+                GunShootTracer pickupShooter = newWeapon.weaponModel != null
+                    ? newWeapon.weaponModel.GetComponent<GunShootTracer>()
+                    : newWeapon.GetComponentInChildren<GunShootTracer>();
+
+                int ammoGain = pickupShooter != null ? pickupShooter.magazineSize : existingShooter.magazineSize;
+                existingShooter.AddReserveAmmo(ammoGain);
+                return;
+            }
         }
 
-        switch (newWeapon.slot)
+        // No weapon in that slot yet — do a normal equip
+        switch (targetSlot)
         {
             case WeaponSlot.Primary:
                 ReplaceWeapon(ref primaryWeapon, newWeapon);
@@ -146,6 +165,17 @@ public class WeaponManager : MonoBehaviour
                 ReplaceWeapon(ref meleeWeapon, newWeapon);
                 Equip(meleeWeapon);
                 break;
+        }
+    }
+
+    Weapon GetWeaponInSlot(WeaponSlot slot)
+    {
+        switch (slot)
+        {
+            case WeaponSlot.Primary:   return primaryWeapon;
+            case WeaponSlot.Secondary: return secondaryWeapon;
+            case WeaponSlot.Melee:     return meleeWeapon;
+            default:                   return null;
         }
     }
 

@@ -72,6 +72,7 @@ public class WeaponArmorySpawner : MonoBehaviour
             EnsurePickupComponents(spawned);
             spawnedWeapons.Add(spawned);
         }
+
     }
 
     [ContextMenu("Clear Spawned Armory")]
@@ -111,6 +112,7 @@ public class WeaponArmorySpawner : MonoBehaviour
         {
             pickup.weapon = weapon;
             weapon.isEquipped = false;
+            weapon.isPickup = true;
             if (weapon.weaponModel != null)
             {
                 weapon.weaponModel.SetActive(true);
@@ -124,6 +126,7 @@ public class WeaponArmorySpawner : MonoBehaviour
         }
 
         rb.isKinematic = true;
+        
     }
 
     private Vector3 ResolveGroundPosition(Vector3 basePosition)

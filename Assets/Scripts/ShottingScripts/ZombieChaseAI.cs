@@ -39,7 +39,7 @@ public class ZombieChaseAI : MonoBehaviour
     [Header("Grounding")]
     public LayerMask groundMask = ~0;
     public float groundProbeHeight = 2.2f;
-    public float groundProbeDistance = 6f;
+    public float groundProbeDistance = 40f;
     public float groundOffset = 0.02f;
     public float groundSnapInterval = 0.2f;
 
