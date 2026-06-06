@@ -1,5 +1,7 @@
+
 using UnityEngine;
 using UnityEngine.UI;
+using System.Collections;
 
 /// <summary>
 /// Round 2 system: Triggers after 40 enemy kills.
@@ -32,7 +34,7 @@ public class SurvivalRound2System : MonoBehaviour
     private float originalSpawnInterval;
     private int originalMaxAliveEnemies;
     private int originalWaveSizeBonus;
-
+    private float worldGroundYReference;
     private void Start()
     {
         if (enemySpawner == null)
@@ -64,6 +66,7 @@ public class SurvivalRound2System : MonoBehaviour
             originalMaxAliveEnemies = enemySpawner.maxAliveEnemies;
             originalWaveSizeBonus = enemySpawner.waveSizeBonus;
         }
+        worldGroundYReference = transform.position.y;
     }
 
     private void OnDestroy()
@@ -85,7 +88,7 @@ public class SurvivalRound2System : MonoBehaviour
 
         if (!round2Active && totalEnemiesKilled >= killsRequiredForRound2)
         {
-            ActivateRound2();
+            StartCoroutine(NextRoundLoop());
         }
     }
 
@@ -98,11 +101,8 @@ public class SurvivalRound2System : MonoBehaviour
         // Announce Round 2
         AnnounceRound2();
 
-        // Expand map
-        if (mapEnlarger != null && !mapEnlarger.HasExpanded)
-        {
-            mapEnlarger.ExpandMap();
-        }
+    
+        
 
         // Update spawner settings for increased difficulty
         if (enemySpawner != null)
@@ -124,7 +124,8 @@ public class SurvivalRound2System : MonoBehaviour
                      $"MaxAlive={enemySpawner.maxAliveEnemies}, " +
                      $"WaveSizeBonus={enemySpawner.waveSizeBonus}");
         }
-
+        killsRequiredForRound2 += 40;
+        round2EnemySpawnWave += 5;
         // Spawn initial wave of enemies from all directions
         SpawnInitialRound2Wave();
     }
@@ -169,4 +170,27 @@ public class SurvivalRound2System : MonoBehaviour
 
     public bool IsRound2Active => round2Active;
     public int TotalEnemiesKilled => totalEnemiesKilled;
+
+    private IEnumerator NextRoundLoop(){
+        round2Active = true;
+
+        while (enemySpawner != null)
+        {
+            ActivateRound2();
+
+            yield return new WaitForSeconds(2f);
+
+            if (enemySpawner.CurrentWaveIndex >= 10)
+            {
+                 if (round2AnnounceText != null)
+                     round2AnnounceText.text = "FINAL ROUND";
+                     break;
+            }
+
+            totalEnemiesKilled = 0;
+            round2Active = false;
+
+            yield return new WaitForSeconds(1f);
+        }
+    }
 }

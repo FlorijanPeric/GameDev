@@ -983,7 +983,8 @@ public class SurvivalEnemySpawner : MonoBehaviour
         }
 
         bool hasControllerAnimation = ai.animator != null && ai.animator.runtimeAnimatorController != null;
-        procedural.enabled = !hasControllerAnimation;
+       //procedural.enabled = !hasControllerAnimation;
+       procedural.enabled = false;
 
         ai.ApplyWaveScaling(Mathf.Max(1, waveIndex));
         ai.SetCombatTuning(directedSpeedScale, directedDamageScale);

@@ -137,7 +137,8 @@ public class IntroSequencePlayer : MonoBehaviour
     {
         if (videoRenderTexture != null)
         {
-            RenderTexture.ReleaseTemporary(videoRenderTexture);
+            videoRenderTexture.Release();
+            Destroy(videoRenderTexture);
             videoRenderTexture = null;
         }
     }
@@ -159,7 +160,7 @@ public class IntroSequencePlayer : MonoBehaviour
 
     private IEnumerator IntroRoutine()
     {
-        float startTime = Time.time;
+        float startTime = Time.unscaledTime;
         Debug.Log("[IntroSequencePlayer] Intro routine started.");
         Debug.Log($"[IntroSequencePlayer] Video assigned: {introVideo != null}, VideoPlayer assigned: {videoPlayer != null}, RawImage assigned: {videoRawImage != null}");
         Debug.Log($"[IntroSequencePlayer] startUI assigned: {startUI != null}");
@@ -220,13 +221,21 @@ public class IntroSequencePlayer : MonoBehaviour
         float effectiveDuration = Mathf.Max(videoDuration, totalDuration);
         Debug.Log($"[IntroSequencePlayer] Effective duration: {effectiveDuration}s (video: {videoDuration}s, total: {totalDuration}s)");
 
-        while (Time.time - startTime < effectiveDuration)
-        {
-            float t = Time.time - startTime;
-            UpdateSubtitle(t);
-            yield return null;
-        }
+       float safetyTimer = 0f;
 
+    while (Time.unscaledTime - startTime < effectiveDuration)
+    {
+        safetyTimer += Time.unscaledDeltaTime;
+
+        if (safetyTimer > effectiveDuration + 2f)
+        {
+            Debug.LogWarning("Intro forced exit (safety timeout)");
+            break;
+        }
+        float t = Time.unscaledTime - startTime;
+        UpdateSubtitle(t);
+        yield return null;
+    }
         Debug.Log($"[IntroSequencePlayer] Intro duration ({effectiveDuration}s) complete. Ending intro.");
         EndIntroAndShowMenu();
         playRoutine = null;
@@ -246,7 +255,8 @@ public class IntroSequencePlayer : MonoBehaviour
         // Clean up RenderTexture
         if (videoRenderTexture != null)
         {
-            RenderTexture.ReleaseTemporary(videoRenderTexture);
+            videoRenderTexture.Release();
+            Destroy(videoRenderTexture);
             videoRenderTexture = null;
             Debug.Log("[IntroSequencePlayer] RenderTexture released.");
         }
@@ -270,6 +280,10 @@ public class IntroSequencePlayer : MonoBehaviour
         }
 
         gameObject.SetActive(false);
+        if (transform.parent != null)
+        {
+            transform.parent.gameObject.SetActive(false);
+        }
         Debug.Log("[IntroSequencePlayer] Intro Canvas deactivated.");
     }
 
